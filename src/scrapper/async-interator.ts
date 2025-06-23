@@ -4,7 +4,6 @@ import path from 'path';
 
 export class ScrapingIterator {
   private queue: PQueue;
-  private results: any[] = [];
   
   constructor(private concurrency: number = 5) {
     this.queue = new PQueue({ concurrency });
@@ -14,14 +13,17 @@ export class ScrapingIterator {
     const chunkSize = Math.ceil(urls.length / this.concurrency);
     const chunks = this.chunkArray(urls, chunkSize);
     
-    const workers = chunks.map(chunk => 
+    const workerPromises = chunks.map(chunk => 
       this.queue.add(() => this.createWorker(chunk, selector))
     );
     
-    for await (const worker of workers) {
-      const results = await worker;
-      for (const result of results) {
-        yield result;
+    for (const workerPromise of workerPromises) {
+      const results = await workerPromise;
+      
+      if (results && Array.isArray(results)) {
+        for (const result of results) {
+          yield result;
+        }
       }
     }
   }
@@ -33,16 +35,26 @@ export class ScrapingIterator {
         { workerData: { urls, selector } }
       );
       
-      const results: any[] = [];
+      let finalResults: any[] = [];
       
       worker.on('message', (message) => {
         if (message.type === 'progress') {
+          console.log('Progress:', message.result);
         } else if (message.type === 'complete') {
-          resolve(message.results);
+          finalResults = message.results || [];
+          resolve(finalResults);
         }
       });
       
-      worker.on('error', reject);
+      worker.on('error', (error) => {
+        console.error('Worker error:', error);
+        reject(error);
+      });
+      
+      setTimeout(() => {
+        worker.terminate();
+        resolve(finalResults);
+      }, 30000);
     });
   }
   

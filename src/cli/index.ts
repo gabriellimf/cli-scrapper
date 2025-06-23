@@ -21,32 +21,47 @@ export class CLI {
   @measure
   @retry(3)
   async scrapeCommand(urls: string[], options: any) {
-    console.log(`Iniciando scraping de ${urls.length} URLs...`);
+    console.log(`🚀 Iniciando scraping de ${urls.length} URLs...`);
     
-    const iterator = new ScrapingIterator(options.concurrency);
+    const iterator = new ScrapingIterator(parseInt(options.concurrency) || 5);
     const results: any[] = [];
     
     this.progressBar.start(urls.length, 0);
     
-    for await (const result of iterator.scrape(urls, options.selector)) {
-      results.push(result);
-      this.progressBar.increment();
+    try {
+      for await (const result of iterator.scrape(urls, options.selector)) {
+        results.push(result);
+        this.progressBar.increment();
+      }
+      
+      this.progressBar.stop();
+      
+      if (options.output) {
+        console.log(`Salvando resultados em ${options.output}...`);
+        
+        const resultGenerator = async function* () {
+          for (const result of results) {
+            yield result;
+          }
+        };
+        
+        await createStreamPipeline(
+          resultGenerator(),
+          options.output,
+          options.transform ? eval(`(${options.transform})`) : undefined
+        );
+      }
+      
+      console.log(`Concluído! ${results.length} resultados processados.`);
+      
+      const successful = results.filter(r => r.success).length;
+      const failed = results.length - successful;
+      console.log(`Sucesso: ${successful}, Falhas: ${failed}`);
+      
+    } catch (error) {
+      this.progressBar.stop();
+      throw error;
     }
-    
-    this.progressBar.stop();
-    
-    if (options.output) {
-      console.log(`Salvando resultados em ${options.output}...`);
-      await createStreamPipeline(
-        async function* () { 
-          for (const result of results) yield result; 
-        }(),
-        options.output,
-        options.transform ? eval(options.transform) : undefined
-      );
-    }
-    
-    console.log(`Concluído! ${results.length} resultados processados.`);
   }
   
   setupCommands() {
@@ -62,7 +77,7 @@ export class CLI {
       .option('-c, --concurrency <number>', 'Número de requests simultâneos', '5')
       .option('-s, --selector <string>', 'Seletor CSS para extrair dados')
       .option('-o, --output <file>', 'Arquivo de saída')
-      .option('-t, --transform <function>', 'Função de transformação dos dados')
+      .option('-t, --transform <function>', 'Função de transformação dos dados (ex: "data => data.title")')
       .action((urls, options) => this.scrapeCommand(urls, options));
     
     return this.program;

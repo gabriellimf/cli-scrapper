@@ -9,13 +9,13 @@ export class DataProcessor extends Transform {
     super({ objectMode: true });
   }
   
-  _transform(chunk: any, encoding: string, callback: Function) {
+  _transform(chunk: any, encoding: string, callback: (error?: Error | null) => void) {
     try {
       const processed = this.transformer ? this.transformer(chunk) : chunk;
       this.push(JSON.stringify(processed) + '\n');
       callback();
     } catch (error) {
-      callback(error);
+      callback(error as Error);
     }
   }
 }
@@ -28,12 +28,16 @@ export class FileWriter extends Writable {
     this.writeStream = fs.createWriteStream(filename, { flags: 'a' });
   }
   
-  _write(chunk: any, encoding: string, callback: Function) {
-    this.writeStream.write(chunk, callback);
+  _write(chunk: any, encoding: string, callback: (error?: Error | null) => void) {
+    this.writeStream.write(chunk, (error) => {
+      callback(error);
+    });
   }
   
-  _final(callback: Function) {
-    this.writeStream.end(callback);
+  _final(callback: (error?: Error | null) => void) {
+    this.writeStream.end((error: Error) => {
+      callback(error);
+    });
   }
 }
 
